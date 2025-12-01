@@ -18,33 +18,51 @@ const generateTokens = (user) => {
 
   return { access_token, refresh_token };
 };
-
-
 export const register = async (req, res) => {
-  const { student_id, username, email, password, role } = req.body;
-  if (!student_id || !email || !password) {
-    return res.status(400).json({ message: "student_id, email, and password are required" });
+  try {
+    const { student_id, username, email, password, role } = req.body;
+
+    // Validate required fields
+    if (!student_id || !username || !email || !password || !role) {
+      return res.status(400).json({ message: "student_id, username, email, password, and role are required" });
+    }
+
+    // Check if student_id, username, or email already exists
+    const existingUser = await sql`
+      SELECT * FROM tbl_authentication_users 
+      WHERE student_id = ${student_id} OR username = ${username} OR email = ${email}
+    `;
+
+    if (existingUser.length) {
+      return res.status(409).json({ message: "Student ID, username, or email already exists" });
+    }
+
+    // Hash the password
+    const password_hash = await bcrypt.hash(password, 10);
+    const user_id = uuidv4();
+
+    // Insert new user
+    const user = await sql`
+      INSERT INTO tbl_authentication_users(user_id, student_id, username, email, password_hash, role, created_at, updated_at)
+      VALUES(${user_id}, ${student_id}, ${username}, ${email}, ${password_hash}, ${role}, NOW(), NOW())
+      RETURNING *
+    `;
+
+    // Return the created user (without password_hash)
+    res.status(201).json({
+      user_id: user[0].user_id,
+      student_id: user[0].student_id,
+      username: user[0].username,
+      email: user[0].email,
+      role: user[0].role,
+      created_at: user[0].created_at,
+      updated_at: user[0].updated_at,
+    });
+
+  } catch (error) {
+    console.error("Register error:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
-
-  const password_hash = await bcrypt.hash(password, 10);
-  const user_id = uuidv4();
-
-
-  const user = await sql`
-    INSERT INTO tbl_authentication_users(user_id, student_id, username, email, password_hash, role, created_at, updated_at)
-    VALUES(${user_id}, ${student_id}, ${username}, ${email}, ${password_hash}, ${role}, NOW(), NOW())
-    RETURNING *
-  `;
-
-  res.json({
-    user_id: user[0].user_id,
-    student_id: user[0].student_id,
-    username: user[0].username,
-    email: user[0].email,
-    role: user[0].role,
-    created_at: user[0].created_at,
-    updated_at: user[0].updated_at,
-  });
 };
 
 export const login = async (req, res) => {
