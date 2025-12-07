@@ -164,26 +164,76 @@ export const getUserById = async (req, res) => {
     res.status(500).json({ message: "Internal server error." });
   }
 };
+
 export const updateUser = async (req, res) => {
-  const { id } = req.params;
-  const {
-    first_name,
-    last_name,
-    address,
-    contact_number,
-    birthdate,
-    tuition_beneficiary_status,
-  } = req.body;
+  try {
+    const {
+      user_id,
+      first_name,
+      last_name,
+      address,
+      contact_number,
+      birthdate,
+      tuition_beneficiary_status,
+    } = req.body;
 
-  const profile = await sql`
-    INSERT INTO tbl_authentication_user_profiles(user_id, first_name, last_name, address, contact_number, birthdate, tuition_beneficiary_status)
-    VALUES(${id}, ${first_name}, ${last_name}, ${address}, ${contact_number}, ${birthdate}, ${tuition_beneficiary_status})
-    ON CONFLICT (user_id) DO UPDATE
-      SET first_name=${first_name}, last_name=${last_name}, address=${address}, contact_number=${contact_number}, birthdate=${birthdate}, tuition_beneficiary_status=${tuition_beneficiary_status}
-    RETURNING *
-  `;
+    // Validate UUID
+    if (!user_id || !isUUID(user_id)) {
+      return res.status(400).json({ message: "Valid user_id (UUID) is required." });
+    }
 
-  res.json(profile[0]);
+    // Check if user exists
+    const exists = await sql`
+      SELECT user_id FROM tbl_authentication_users WHERE user_id = ${user_id}
+    `;
+
+    if (exists.length === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    // INSERT or UPDATE user profile
+    const profile = await sql`
+      INSERT INTO tbl_authentication_user_profiles (
+        user_id,
+        first_name,
+        last_name,
+        address,
+        contact_number,
+        birthdate,
+        tuition_beneficiary_status
+      )
+      VALUES (
+        ${user_id},
+        ${first_name || null},
+        ${last_name || null},
+        ${address || null},
+        ${contact_number || null},
+        ${birthdate || null},
+        ${tuition_beneficiary_status ?? false}
+      )
+      ON CONFLICT (user_id)
+      DO UPDATE SET
+        first_name = COALESCE(EXCLUDED.first_name, tbl_authentication_user_profiles.first_name),
+        last_name = COALESCE(EXCLUDED.last_name, tbl_authentication_user_profiles.last_name),
+        address = COALESCE(EXCLUDED.address, tbl_authentication_user_profiles.address),
+        contact_number = COALESCE(EXCLUDED.contact_number, tbl_authentication_user_profiles.contact_number),
+        birthdate = COALESCE(EXCLUDED.birthdate, tbl_authentication_user_profiles.birthdate),
+        tuition_beneficiary_status = EXCLUDED.tuition_beneficiary_status
+      RETURNING *;
+    `;
+
+    return res.status(200).json({
+      message: "Profile updated successfully.",
+      data: profile[0],
+    });
+
+  } catch (error) {
+    console.error("Error updating user profile:", error);
+    res.status(500).json({
+      message: "Internal server error while updating profile",
+      error: error.message,
+    });
+  }
 };
 
 
