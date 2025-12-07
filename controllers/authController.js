@@ -166,37 +166,47 @@ export const getUserById = async (req, res) => {
 
 export const updateUser = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    // FIX: UUID validation
-    if (!isUUID(id)) {
-      return res.status(400).json({ message: "Invalid user ID." });
-    }
-
     const {
+      user_id,
       first_name,
       last_name,
       address,
       contact_number,
       birthdate,
-      tuition_beneficiary_status,
+      tuition_beneficiary_status
     } = req.body;
 
-    const existingUser = await sql`
-      SELECT user_id FROM tbl_authentication_users WHERE user_id = ${id}
-    `;
+    // Validate user_id
+    if (!user_id || isNaN(user_id)) {
+      return res.status(400).json({ message: "Invalid or missing user_id." });
+    }
 
-    if (!existingUser.length) {
+    // Check if main user exists
+    const userExists = await sql`
+      SELECT user_id FROM tbl_authentication_users WHERE user_id = ${user_id}
+    `;
+    if (userExists.length === 0) {
       return res.status(404).json({ message: "User not found." });
     }
 
+    // UPSERT profile
     const profile = await sql`
       INSERT INTO tbl_authentication_user_profiles (
-        user_id, first_name, last_name, address, contact_number, birthdate, tuition_beneficiary_status
+        user_id,
+        first_name,
+        last_name,
+        address,
+        contact_number,
+        birthdate,
+        tuition_beneficiary_status
       )
       VALUES (
-        ${id}, ${first_name || null}, ${last_name || null}, ${address || null},
-        ${contact_number || null}, ${birthdate || null},
+        ${user_id},
+        ${first_name || null},
+        ${last_name || null},
+        ${address || null},
+        ${contact_number || null},
+        ${birthdate || null},
         ${tuition_beneficiary_status ?? false}
       )
       ON CONFLICT (user_id)
@@ -207,17 +217,18 @@ export const updateUser = async (req, res) => {
         contact_number = EXCLUDED.contact_number,
         birthdate = EXCLUDED.birthdate,
         tuition_beneficiary_status = EXCLUDED.tuition_beneficiary_status
-      RETURNING *;
+      RETURNING profile_id, user_id, first_name, last_name, address,
+                contact_number, birthdate, tuition_beneficiary_status;
     `;
 
-    res.json({
-      message: "User profile updated successfully.",
-      profile: profile[0],
-    });
+    return res.status(200).json(profile[0]);
 
   } catch (error) {
     console.error("Error updating user profile:", error);
-    res.status(500).json({ message: "Internal server error." });
+    return res.status(500).json({
+      message: "Internal server error.",
+      error: error.message,
+    });
   }
 };
 
