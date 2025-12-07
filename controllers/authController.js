@@ -164,62 +164,28 @@ export const getUserById = async (req, res) => {
     res.status(500).json({ message: "Internal server error." });
   }
 };
-
 export const updateUser = async (req, res) => {
-  try {
-    const {
-      user_id,
-      first_name,
-      last_name,
-      address,
-      contact_number,
-      birthdate,
-      tuition_beneficiary_status,
-    } = req.body;
+  const { id } = req.params;
+  const {
+    first_name,
+    last_name,
+    address,
+    contact_number,
+    birthdate,
+    tuition_beneficiary_status,
+  } = req.body;
 
-    if (!user_id) {
-      return res.status(400).json({ message: "user_id is required" });
-    }
+  const profile = await sql`
+    INSERT INTO tbl_authentication_user_profiles(user_id, first_name, last_name, address, contact_number, birthdate, tuition_beneficiary_status)
+    VALUES(${id}, ${first_name}, ${last_name}, ${address}, ${contact_number}, ${birthdate}, ${tuition_beneficiary_status})
+    ON CONFLICT (user_id) DO UPDATE
+      SET first_name=${first_name}, last_name=${last_name}, address=${address}, contact_number=${contact_number}, birthdate=${birthdate}, tuition_beneficiary_status=${tuition_beneficiary_status}
+    RETURNING *
+  `;
 
-    const profile = await sql`
-      INSERT INTO tbl_authentication_user_profiles (
-        user_id,
-        first_name,
-        last_name,
-        address,
-        contact_number,
-        birthdate,
-        tuition_beneficiary_status
-      )
-      VALUES (
-        ${user_id},
-        ${first_name || null},
-        ${last_name || null},
-        ${address || null},
-        ${contact_number || null},
-        ${birthdate || null},
-        ${tuition_beneficiary_status ?? false}
-      )
-      ON CONFLICT (user_id)
-      DO UPDATE SET
-        first_name = EXCLUDED.first_name,
-        last_name = EXCLUDED.last_name,
-        address = EXCLUDED.address,
-        contact_number = EXCLUDED.contact_number,
-        birthdate = EXCLUDED.birthdate,
-        tuition_beneficiary_status = EXCLUDED.tuition_beneficiary_status
-      RETURNING *;
-    `;
-
-    res.status(200).json(profile[0]);
-  } catch (error) {
-    console.error("Error updating user profile:", error);
-    res.status(500).json({
-      message: "Internal server error while updating profile",
-      error: error.message,
-    });
-  }
+  res.json(profile[0]);
 };
+
 
 export const refresh = async (req, res) => {
   res.json({
