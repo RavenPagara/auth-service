@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import sql from "../db.js";
 import { v4 as uuidv4, validate as isUUID } from "uuid";
 
+
 const generateTokens = (user) => {
   const access_token = jwt.sign(
     { user_id: user.user_id, role: user.role },
@@ -179,9 +180,14 @@ export const updateUser = async (req, res) => {
       return res.status(400).json({ message: "user_id is required" });
     }
 
-    const query = `
-      INSERT INTO user_profiles (user_id, first_name, last_name, address, contact_number, birthdate, tuition_beneficiary_status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    const result = await sql`
+      INSERT INTO tbl_authentication_user_profiles (
+        user_id, first_name, last_name, address, contact_number, birthdate, tuition_beneficiary_status
+      )
+      VALUES (
+        ${user_id}, ${first_name}, ${last_name}, ${address},
+        ${contact_number}, ${birthdate}, ${tuition_beneficiary_status}
+      )
       ON CONFLICT (user_id) DO UPDATE SET
         first_name = EXCLUDED.first_name,
         last_name = EXCLUDED.last_name,
@@ -192,19 +198,7 @@ export const updateUser = async (req, res) => {
       RETURNING *;
     `;
 
-    const values = [
-      user_id,
-      first_name,
-      last_name,
-      address,
-      contact_number,
-      birthdate,
-      tuition_beneficiary_status,
-    ];
-
-    const result = await db.query(query, values);
-
-    res.json(result.rows[0]);
+    return res.json(result[0]);
 
   } catch (error) {
     console.error("Error updating user profile:", error);
