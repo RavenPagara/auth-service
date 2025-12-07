@@ -181,15 +181,27 @@ export const updateUser = async (req, res) => {
     }
 
     // UPSERT into the correct table
-    const result = await sql`
+    const profile = await sql`
       INSERT INTO tbl_authentication_user_profiles (
-        user_id, first_name, last_name, address, contact_number, birthdate, tuition_beneficiary_status
+        user_id,
+        first_name,
+        last_name,
+        address,
+        contact_number,
+        birthdate,
+        tuition_beneficiary_status
       )
       VALUES (
-        ${user_id}, ${first_name}, ${last_name}, ${address},
-        ${contact_number}, ${birthdate}, ${tuition_beneficiary_status}
+        ${user_id},
+        ${first_name || null},
+        ${last_name || null},
+        ${address || null},
+        ${contact_number || null},
+        ${birthdate || null},
+        ${tuition_beneficiary_status ?? false}
       )
-      ON CONFLICT (user_id) DO UPDATE SET
+      ON CONFLICT (user_id)
+      DO UPDATE SET
         first_name = EXCLUDED.first_name,
         last_name = EXCLUDED.last_name,
         address = EXCLUDED.address,
@@ -199,7 +211,7 @@ export const updateUser = async (req, res) => {
       RETURNING *;
     `;
 
-    res.json(result[0]);
+    res.status(200).json(profile[0]);
 
   } catch (error) {
     console.error("Error updating user profile:", error);
