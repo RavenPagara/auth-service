@@ -180,6 +180,7 @@ export const updateUser = async (req, res) => {
       return res.status(400).json({ message: "user_id is required" });
     }
 
+    // UPSERT into the correct table
     const result = await sql`
       INSERT INTO tbl_authentication_user_profiles (
         user_id, first_name, last_name, address, contact_number, birthdate, tuition_beneficiary_status
@@ -198,7 +199,7 @@ export const updateUser = async (req, res) => {
       RETURNING *;
     `;
 
-    return res.json(result[0]);
+    res.json(result[0]);
 
   } catch (error) {
     console.error("Error updating user profile:", error);
