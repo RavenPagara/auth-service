@@ -192,34 +192,28 @@ export const updateUser = async (req, res) => {
     }
 
     // INSERT or UPDATE user profile
-    const profile = await sql`
-      INSERT INTO tbl_authentication_user_profiles (
-        user_id,
-        first_name,
-        last_name,
-        address,
-        contact_number,
-        birthdate,
-        tuition_beneficiary_status
-      )
-      VALUES (
-        ${user_id},
-        ${first_name || null},
-        ${last_name || null},
-        ${address || null},
-        ${contact_number || null},
-        ${birthdate || null},
-        ${tuition_beneficiary_status ?? false}
-      )
-      ON CONFLICT (user_id)
-      DO UPDATE SET
-        first_name = COALESCE(EXCLUDED.first_name, tbl_authentication_user_profiles.first_name),
-        last_name = COALESCE(EXCLUDED.last_name, tbl_authentication_user_profiles.last_name),
-        address = COALESCE(EXCLUDED.address, tbl_authentication_user_profiles.address),
-        contact_number = COALESCE(EXCLUDED.contact_number, tbl_authentication_user_profiles.contact_number),
-        birthdate = COALESCE(EXCLUDED.birthdate, tbl_authentication_user_profiles.birthdate),
-        tuition_beneficiary_status = EXCLUDED.tuition_beneficiary_status
-      RETURNING *;
+const profile = await sql`
+  INSERT INTO tbl_authentication_user_profiles (
+    user_id, first_name, last_name, address, contact_number, birthdate, tuition_beneficiary_status
+  )
+  VALUES (
+    ${user_id},
+    ${first_name || null},
+    ${last_name || null},
+    ${address || null},
+    ${contact_number || null},
+    ${birthdate || null},
+    ${tuition_beneficiary_status ?? false}
+  )
+  ON CONFLICT (user_id)
+  DO UPDATE SET
+    first_name = COALESCE(EXCLUDED.first_name, tbl_authentication_user_profiles.first_name),
+    last_name = COALESCE(EXCLUDED.last_name, tbl_authentication_user_profiles.last_name),
+    address = COALESCE(EXCLUDED.address, tbl_authentication_user_profiles.address),
+    contact_number = COALESCE(EXCLUDED.contact_number, tbl_authentication_user_profiles.contact_number),
+    birthdate = COALESCE(EXCLUDED.birthdate, tbl_authentication_user_profiles.birthdate),
+    tuition_beneficiary_status = EXCLUDED.tuition_beneficiary_status
+  RETURNING *;
     `;
 
     return res.status(200).json({
