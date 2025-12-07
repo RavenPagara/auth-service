@@ -164,6 +164,7 @@ export const getUserById = async (req, res) => {
     res.status(500).json({ message: "Internal server error." });
   }
 };
+
 export const updateUser = async (req, res) => {
   try {
     const {
