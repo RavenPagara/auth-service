@@ -180,13 +180,6 @@ export const updateUser = async (req, res) => {
       return res.status(400).json({ message: "user_id is required" });
     }
 
-    // Check UUID format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(user_id)) {
-      return res.status(400).json({ message: "Invalid user_id format." });
-    }
-
-    // UPSERT profile using Neon sql
     const profile = await sql`
       INSERT INTO tbl_authentication_user_profiles (
         user_id,
@@ -218,7 +211,6 @@ export const updateUser = async (req, res) => {
     `;
 
     res.status(200).json(profile[0]);
-
   } catch (error) {
     console.error("Error updating user profile:", error);
     res.status(500).json({
@@ -227,7 +219,6 @@ export const updateUser = async (req, res) => {
     });
   }
 };
-
 
 export const refresh = async (req, res) => {
   res.json({
