@@ -163,7 +163,6 @@ export const getUserById = async (req, res) => {
     res.status(500).json({ message: "Internal server error." });
   }
 };
-
 export const updateUser = async (req, res) => {
   try {
     const {
@@ -173,64 +172,49 @@ export const updateUser = async (req, res) => {
       address,
       contact_number,
       birthdate,
-      tuition_beneficiary_status
+      tuition_beneficiary_status,
     } = req.body;
 
-    // Validate user_id
-    if (!user_id || isNaN(user_id)) {
-      return res.status(400).json({ message: "Invalid or missing user_id." });
+    if (!user_id) {
+      return res.status(400).json({ message: "user_id is required" });
     }
 
-    // Check if main user exists
-    const userExists = await sql`
-      SELECT user_id FROM tbl_authentication_users WHERE user_id = ${user_id}
-    `;
-    if (userExists.length === 0) {
-      return res.status(404).json({ message: "User not found." });
-    }
-
-    // UPSERT profile
-    const profile = await sql`
-      INSERT INTO tbl_authentication_user_profiles (
-        user_id,
-        first_name,
-        last_name,
-        address,
-        contact_number,
-        birthdate,
-        tuition_beneficiary_status
-      )
-      VALUES (
-        ${user_id},
-        ${first_name || null},
-        ${last_name || null},
-        ${address || null},
-        ${contact_number || null},
-        ${birthdate || null},
-        ${tuition_beneficiary_status ?? false}
-      )
-      ON CONFLICT (user_id)
-      DO UPDATE SET
+    const query = `
+      INSERT INTO user_profiles (user_id, first_name, last_name, address, contact_number, birthdate, tuition_beneficiary_status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (user_id) DO UPDATE SET
         first_name = EXCLUDED.first_name,
         last_name = EXCLUDED.last_name,
         address = EXCLUDED.address,
         contact_number = EXCLUDED.contact_number,
         birthdate = EXCLUDED.birthdate,
         tuition_beneficiary_status = EXCLUDED.tuition_beneficiary_status
-      RETURNING profile_id, user_id, first_name, last_name, address,
-                contact_number, birthdate, tuition_beneficiary_status;
+      RETURNING *;
     `;
 
-    return res.status(200).json(profile[0]);
+    const values = [
+      user_id,
+      first_name,
+      last_name,
+      address,
+      contact_number,
+      birthdate,
+      tuition_beneficiary_status,
+    ];
+
+    const result = await db.query(query, values);
+
+    res.json(result.rows[0]);
 
   } catch (error) {
     console.error("Error updating user profile:", error);
-    return res.status(500).json({
-      message: "Internal server error.",
+    res.status(500).json({
+      message: "Internal server error while updating profile",
       error: error.message,
     });
   }
 };
+
 
 export const refresh = async (req, res) => {
   res.json({
