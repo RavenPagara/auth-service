@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import config from "../config.js";
+import sql from "../db.js";
 
 export const validateToken = (req, res, next) => {
   try {

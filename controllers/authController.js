@@ -1,20 +1,21 @@
+
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import sql from "../db.js";
 import { v4 as uuidv4, validate as isUUID } from "uuid";
-
+import config from "../config.js";
 
 const generateTokens = (user) => {
   const access_token = jwt.sign(
     { user_id: user.user_id, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: "1h" }
+    config.jwtSecret,
+    { expiresIn: config.tokenExpiry }
   );
 
   const refresh_token = jwt.sign(
     { user_id: user.user_id },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: "7d" }
+    config.jwtRefreshSecret,
+    { expiresIn: config.refreshExpiry }
   );
 
   return { access_token, refresh_token };
@@ -25,28 +26,22 @@ export const register = async (req, res) => {
     const { student_id, username, email, password, role } = req.body;
 
     if (!student_id || !username || !email || !password || !role) {
-      return res.status(400).json({
-        message: "student_id, username, email, password, and role are required",
-      });
+      return res.status(400).json({ message: "student_id, username, email, password, and role are required" });
     }
 
     const existingUser = await sql`
-      SELECT * FROM tbl_authentication_users 
-      WHERE student_id = ${student_id} 
-         OR username = ${username} 
-         OR email = ${email}
+      SELECT user_id FROM tbl_authentication_users 
+      WHERE student_id = ${student_id} OR username = ${username} OR email = ${email}
     `;
 
     if (existingUser.length) {
-      return res.status(409).json({
-        message: "Student ID, username, or email already exists",
-      });
+      return res.status(409).json({ message: "Student ID, username, or email already exists" });
     }
 
     const password_hash = await bcrypt.hash(password, 10);
     const user_id = uuidv4();
 
-    const user = await sql`
+    const inserted = await sql`
       INSERT INTO tbl_authentication_users(
         user_id, student_id, username, email, password_hash, role, created_at, updated_at
       )
@@ -56,14 +51,16 @@ export const register = async (req, res) => {
       RETURNING *
     `;
 
+    const user = inserted[0];
+
     res.status(201).json({
-      user_id: user[0].user_id,
-      student_id: user[0].student_id,
-      username: user[0].username,
-      email: user[0].email,
-      role: user[0].role,
-      created_at: user[0].created_at,
-      updated_at: user[0].updated_at,
+      user_id: user.user_id,
+      student_id: user.student_id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      created_at: user.created_at,
+      updated_at: user.updated_at,
     });
 
   } catch (error) {
@@ -76,9 +73,11 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const users = await sql`
-      SELECT * FROM tbl_authentication_users WHERE email = ${email}
-    `;
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password are required" });
+    }
+
+    const users = await sql`SELECT * FROM tbl_authentication_users WHERE email = ${email}`;
 
     if (!users.length) {
       return res.status(404).json({ message: "User not found" });
@@ -88,26 +87,33 @@ export const login = async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
 
     if (!valid) {
-      // FIX: add id column (UUID)
-      await sql`
-        INSERT INTO tbl_authentication_failed_login(
-          id, user_id, attempt_time, ip_address
-        )
-        VALUES(
-          ${uuidv4()}, ${user.user_id}, NOW(), ${req.ip}
-        )
-      `;
+      // record failed login but only if we have a user_id
+      try {
+        await sql`
+          INSERT INTO tbl_authentication_failed_login (id, user_id, attempt_time, ip_address)
+          VALUES (${uuidv4()}, ${user.user_id}, NOW(), ${req.ip})
+        `;
+      } catch (e) {
+        console.warn('Failed to log failed-login:', e.message);
+      }
       return res.status(401).json({ message: "Incorrect password" });
     }
 
-    const token = jwt.sign(
-      { user_id: user.user_id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" }
-    );
+    const tokens = generateTokens(user);
+
+    // Optional: save refresh token in auth_tokens table
+    try {
+      await sql`
+        INSERT INTO tbl_authentication_auth_tokens (token_id, user_id, token, expires_at, created_at)
+        VALUES (${uuidv4()}, ${user.user_id}, ${tokens.refresh_token}, ${new Date(Date.now() + 7*24*60*60*1000).toISOString()}, NOW())
+      `;
+    } catch (e) {
+      console.warn('Failed to save refresh token:', e.message);
+    }
 
     res.json({
-      token,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
       expires_at: new Date(Date.now() + 3600000).toISOString(),
       user_id: user.user_id,
       role: user.role,
@@ -120,6 +126,7 @@ export const login = async (req, res) => {
 };
 
 export const logout = async (req, res) => {
+  // Optional: accept refresh token in body to remove from auth_tokens
   res.json({ message: "Logout successful" });
 };
 
@@ -127,7 +134,6 @@ export const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // FIX: UUID validation
     if (!isUUID(id)) {
       return res.status(400).json({ message: "Invalid user ID (must be UUID)." });
     }
@@ -167,8 +173,9 @@ export const getUserById = async (req, res) => {
 
 export const updateUser = async (req, res) => {
   try {
+    const { id: user_id } = req.params; // get from route param
+
     const {
-      user_id,
       first_name,
       last_name,
       address,
@@ -178,29 +185,24 @@ export const updateUser = async (req, res) => {
     } = req.body;
 
     // Validate UUID
-    if (!user_id || !isUUID(user_id)) {
-      return res.status(400).json({ message: "Valid user_id (UUID) is required." });
+    if (!isUUID(user_id)) {
+      return res.status(400).json({ message: "Valid user_id (UUID) is required in URL." });
     }
 
     // Check if user exists
-    const exists = await sql`
-      SELECT user_id FROM tbl_authentication_users WHERE user_id = ${user_id}
-    `;
+    const exists = await sql`SELECT user_id FROM tbl_authentication_users WHERE user_id = ${user_id}`;
 
     if (exists.length === 0) {
       return res.status(404).json({ message: "User not found." });
     }
 
+    // Make sure booleans handled correctly
+    const tuitionFlag = typeof tuition_beneficiary_status === 'boolean' ? tuition_beneficiary_status : (tuition_beneficiary_status ? true : false);
+
     // INSERT or UPDATE user profile
     const profile = await sql`
       INSERT INTO tbl_authentication_user_profiles (
-        user_id,
-        first_name,
-        last_name,
-        address,
-        contact_number,
-        birthdate,
-        tuition_beneficiary_status
+        user_id, first_name, last_name, address, contact_number, birthdate, tuition_beneficiary_status
       )
       VALUES (
         ${user_id},
@@ -209,7 +211,7 @@ export const updateUser = async (req, res) => {
         ${address || null},
         ${contact_number || null},
         ${birthdate || null},
-        ${tuition_beneficiary_status ?? false}
+        ${tuitionFlag}
       )
       ON CONFLICT (user_id)
       DO UPDATE SET
@@ -222,66 +224,45 @@ export const updateUser = async (req, res) => {
       RETURNING *;
     `;
 
-    return res.status(200).json({
-      message: "Profile updated successfully.",
-      data: profile[0],
-    });
+    return res.status(200).json({ message: "Profile updated successfully.", data: profile[0] });
 
   } catch (error) {
     console.error("Error updating user profile:", error);
-    res.status(500).json({
-      message: "Internal server error while updating profile",
-      error: error.message,
-    });
+    res.status(500).json({ message: "Internal server error while updating profile", error: error.message });
   }
 };
 
-
 export const refresh = async (req, res) => {
-  res.json({
-    access_token: "newAccessToken456",
-    expires_at: new Date(Date.now() + 3600000).toISOString(),
-    user_id: 1,
-    role: "student",
-  });
+  // Implement real refresh logic if you store refresh tokens; placeholder kept
+  res.json({ access_token: "newAccessToken456", expires_at: new Date(Date.now() + 3600000).toISOString(), user_id: 1, role: "student" });
 };
 
 export const passwordForgot = async (req, res) => {
   const { email } = req.body;
-  res.json({
-    message: "Password reset token sent to email",
-    reset_token: "reset123abc",
-    expires_at: new Date(Date.now() + 3600000).toISOString(),
-  });
+  // implement real flow: generate token, save to tbl_authentication_password_resets and mail
+  res.json({ message: "Password reset token sent to email", reset_token: "reset123abc", expires_at: new Date(Date.now() + 3600000).toISOString() });
 };
 
 export const passwordReset = async (req, res) => {
   const { user_id, reset_token, expires_at } = req.body;
-  res.json({
-    reset_id: 1,
-    user_id,
-    reset_token,
-    expires_at,
-    created_at: new Date().toISOString(),
-  });
+  // implement reset validation
+  res.json({ reset_id: 1, user_id, reset_token, expires_at, created_at: new Date().toISOString() });
 };
 
 export const failedLogin = async (req, res) => {
   const { user_id, attempt_time, ip_address } = req.body;
-
-  res.json({
-    id: uuidv4(),
-    user_id,
-    attempt_time,
-    ip_address,
-  });
+  // store a record if user_id is valid UUID
+  try {
+    const id = uuidv4();
+    await sql`INSERT INTO tbl_authentication_failed_login (id, user_id, attempt_time, ip_address) VALUES (${id}, ${isUUID(user_id) ? user_id : null}, ${attempt_time || new Date().toISOString()}, ${ip_address || null})`;
+    res.json({ id, user_id, attempt_time, ip_address });
+  } catch (e) {
+    console.error('failedLogin error:', e.message);
+    res.status(500).json({ message: 'Failed to record failed login' });
+  }
 };
 
 export const validateUserToken = (req, res) => {
-  res.json({
-    valid: true,
-    user_id: 1,
-    role: "student",
-    expires_at: new Date(Date.now() + 3600000).toISOString(),
-  });
+  res.json({ valid: true, user_id: 1, role: "student", expires_at: new Date(Date.now() + 3600000).toISOString() });
 };
+
