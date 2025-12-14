@@ -87,7 +87,7 @@ export const login = async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
 
     if (!valid) {
-      // record failed login but only if we have a user_id
+
       try {
         await sql`
           INSERT INTO tbl_authentication_failed_login (id, user_id, attempt_time, ip_address)
@@ -101,7 +101,6 @@ export const login = async (req, res) => {
 
     const tokens = generateTokens(user);
 
-    // Optional: save refresh token in auth_tokens table
     try {
       await sql`
         INSERT INTO tbl_authentication_auth_tokens (token_id, user_id, token, expires_at, created_at)
@@ -126,7 +125,7 @@ export const login = async (req, res) => {
 };
 
 export const logout = async (req, res) => {
-  // Optional: accept refresh token in body to remove from auth_tokens
+
   res.json({ message: "Logout successful" });
 };
 
@@ -173,7 +172,7 @@ export const getUserById = async (req, res) => {
 
 export const updateUser = async (req, res) => {
   try {
-    const { id: user_id } = req.params; // get from route param
+    const { id: user_id } = req.params; 
 
     const {
       first_name,
@@ -184,22 +183,18 @@ export const updateUser = async (req, res) => {
       tuition_beneficiary_status,
     } = req.body;
 
-    // Validate UUID
     if (!isUUID(user_id)) {
       return res.status(400).json({ message: "Valid user_id (UUID) is required in URL." });
     }
 
-    // Check if user exists
     const exists = await sql`SELECT user_id FROM tbl_authentication_users WHERE user_id = ${user_id}`;
 
     if (exists.length === 0) {
       return res.status(404).json({ message: "User not found." });
     }
 
-    // Make sure booleans handled correctly
     const tuitionFlag = typeof tuition_beneficiary_status === 'boolean' ? tuition_beneficiary_status : (tuition_beneficiary_status ? true : false);
 
-    // INSERT or UPDATE user profile
     const profile = await sql`
       INSERT INTO tbl_authentication_user_profiles (
         user_id, first_name, last_name, address, contact_number, birthdate, tuition_beneficiary_status
@@ -233,25 +228,25 @@ export const updateUser = async (req, res) => {
 };
 
 export const refresh = async (req, res) => {
-  // Implement real refresh logic if you store refresh tokens; placeholder kept
+
   res.json({ access_token: "newAccessToken456", expires_at: new Date(Date.now() + 3600000).toISOString(), user_id: 1, role: "student" });
 };
 
 export const passwordForgot = async (req, res) => {
   const { email } = req.body;
-  // implement real flow: generate token, save to tbl_authentication_password_resets and mail
+
   res.json({ message: "Password reset token sent to email", reset_token: "reset123abc", expires_at: new Date(Date.now() + 3600000).toISOString() });
 };
 
 export const passwordReset = async (req, res) => {
   const { user_id, reset_token, expires_at } = req.body;
-  // implement reset validation
+
   res.json({ reset_id: 1, user_id, reset_token, expires_at, created_at: new Date().toISOString() });
 };
 
 export const failedLogin = async (req, res) => {
   const { user_id, attempt_time, ip_address } = req.body;
-  // store a record if user_id is valid UUID
+ 
   try {
     const id = uuidv4();
     await sql`INSERT INTO tbl_authentication_failed_login (id, user_id, attempt_time, ip_address) VALUES (${id}, ${isUUID(user_id) ? user_id : null}, ${attempt_time || new Date().toISOString()}, ${ip_address || null})`;
